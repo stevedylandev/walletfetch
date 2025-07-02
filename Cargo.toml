@@ -1,0 +1,12 @@
+[package]
+name = "wallet-fetch"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+reqwest = { version = "0.11", features = ["blocking", "json"]}
+serde = { version = "1.0", features = ["derive"]}
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"]}
+future = "0.3"
