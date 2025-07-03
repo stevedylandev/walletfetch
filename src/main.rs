@@ -1,11 +1,11 @@
 use clap::{Arg, Command};
-use reqwest::blocking::Client;
+use reqwest::Client;
 use std::collections::HashMap;
 use std::error::Error;
 use std::env;
 use serde::{Deserialize,Serialize};
 use futures::future::join_all;
-//use serde_json::json;
+use tokio::task::JoinHandle;
 
 #[derive(Serialize)]
 struct JsonRpcRequest {
@@ -20,14 +20,19 @@ struct JsonRpcResponse {
   // id: u32,
   // jsoonrpc: String,
   result: String,
-//#[serde(default)]
- // error: Option<JsonRpcError>,
 }
 
-// #[derive(Debug, Deserialize)]
-// struct JsonRpcError {
-//   code: i32,
-//   message: String,
+
+// #[derive(Deserialize)]
+// struct Config {
+//   address: Option<String>,
+//   networks: Option<HashMap<String, NetworkConfig>>,
+// }
+
+// #[derive(Deserialize)]
+// struct NetworkConfig {
+//   name: String,
+//   rpc_url: String,
 // }
 
 struct Network {
@@ -50,17 +55,95 @@ fn collect_rpc_urls() -> HashMap<u64, Network> {
           };
 
           networks.insert(chain_id, Network{
-            chain_id,
+            chain_id: chain_id,
             name: name.to_string(),
             rpc_url: value,
-          })
-        }
+          });
+        };
       }
     }
   }
+
+  networks
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+async fn fetch_balance(
+  client: &Client,
+  address: &str,
+  network: &Network
+) -> Result<(u64, f64, String), Box<dyn Error + Send + Sync >> {
+  let request_data = JsonRpcRequest {
+    jsonrpc: "2.0".to_string(),
+    method: "eth_getBalance".to_string(),
+    params: vec![address.to_string(), "latest".to_string()],
+    id: 1,
+  };
+
+  let response = client.post(&network.rpc_url)
+    .json(&request_data)
+    .send()
+    .await?;
+
+  let status = response.status();
+
+  if !response.status().is_success() {
+    let error_text = response.text().await?;
+    return Err(format!("HTTP error {}: {}", status, error_text).into());
+  }
+
+  let response_text = response.text().await?;
+  let response_body: JsonRpcResponse = serde_json::from_str(&response_text)?;
+
+  if let Some(hex_str) = response_body.result.strip_prefix("0x"){
+    if let Ok(balance) = u128::from_str_radix(hex_str, 16){
+      let eth_balance = balance as f64 / 1_000_000_000_000_000_000.0;
+      return Ok((network.chain_id, eth_balance, network.name.clone()));
+    }
+  }
+  Err(format!("Failed to parse balance for network {}", network.name).into())
+}
+
+async fn fetch_all_balances(
+  address: &str,
+  networks: HashMap<u64, Network>
+) -> Result<Vec<(u64, f64, String)>, Box<dyn Error>> {
+  let client = Client::new();
+
+  let mut tasks: Vec<JoinHandle<Result<(u64, f64, String), Box<dyn Error + Send + Sync>>>> = Vec::new();
+
+  for (_, network) in networks {
+    let client_clone = client.clone();
+    let address_clone = address.to_string();
+    let network_clone = network;
+
+    let task = tokio::spawn(async move {
+      fetch_balance(&client_clone, &address_clone, &network_clone).await
+    });
+
+    tasks.push(task);
+  }
+
+  let results = join_all(tasks).await;
+
+  let mut balances = Vec::new();
+  for result in results {
+    match result {
+      Ok(Ok((chain_id, balance, name))) => {
+        balances.push((chain_id, balance, name));
+      },
+      Ok(Err(e)) => {
+        eprintln!("Error fetching balance: {}", e);
+      },
+      Err(e) => {
+        eprintln!("Task error: {}", e);
+      }
+    }
+  }
+  Ok(balances)
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     let matches = Command::new("wallet-fetch")
         .version("0.0.1")
         .author("Steve Simkins")
@@ -86,57 +169,23 @@ fn main() -> Result<(), Box<dyn Error>> {
       }
     };
 
-    let rpc_url = match env::var("RPC_URL"){
-      Ok(url) => url,
-      Err(_) => {
-        eprintln!("RPC URL not defined");
-        return Err("RPC_URL environment variable not set".into());
-      }
-    };
+    let networks = collect_rpc_urls();
 
-    let client = Client::new();
-
-    let request_data = JsonRpcRequest {
-      jsonrpc: "2.0".to_string(),
-      method:"eth_getBalance".to_string(),
-      params: vec![address.to_string(), "latest".to_string()],
-      id: 1,
-    };
-
-
-    let response = match client.post(&rpc_url)
-      .json(&request_data)
-      .send() {
-        Ok(resp) => resp,
-        Err(e) => {
-          eprintln!("Error sending request: {}", e);
-          return Err(e.into());
-        }
-      };
-
-    if !response.status().is_success() {
-      eprintln!("Error: HTTP status {}", response.status());
-      eprintln!("Error: {}", response.text()?);
-      return Err(format!("Http error").into());
+    if networks.is_empty(){
+      eprintln!("RPC URLs are not defined");
     }
 
-    let response_text = response.text()?;
+    let balances = fetch_all_balances(&address, networks).await?;
 
-   let response_body: JsonRpcResponse = match
-    serde_json::from_str(&response_text){
-      Ok(body) => body,
-      Err(e) => {
-        eprintln!("Error parsing response: {}", e);
-        return Err(e.into());
+    if balances.is_empty(){
+      println!("No balances found for address {}", address);
+    } else {
+      println!("Balances for {}", address);
+      println!("------------------------");
+      for (_, balance, name) in balances {
+        println!("{}: {:.4} ETH", name, balance);
       }
-    };
-
-   if let Some(hex_str) = response_body.result.strip_prefix("0x"){
-     if let Ok(balance) = u128::from_str_radix(hex_str, 16){
-       let eth_balance = balance as f64 / 1_000_000_000_000_000_000.0;
-       println!("Balance in ETH: {:.4}", eth_balance);
-     }
-   }
+    }
 
     Ok(())
 }
