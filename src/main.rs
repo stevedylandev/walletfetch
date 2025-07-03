@@ -2,10 +2,11 @@ use clap::{Arg, Command};
 use reqwest::Client;
 use std::collections::HashMap;
 use std::error::Error;
-use std::env;
 use serde::{Deserialize,Serialize};
 use futures::future::join_all;
 use tokio::task::JoinHandle;
+use toml;
+use dirs;
 
 #[derive(Serialize)]
 struct JsonRpcRequest {
@@ -23,17 +24,17 @@ struct JsonRpcResponse {
 }
 
 
-// #[derive(Deserialize)]
-// struct Config {
-//   address: Option<String>,
-//   networks: Option<HashMap<String, NetworkConfig>>,
-// }
+#[derive(Deserialize)]
+struct Config {
+  address: Option<String>,
+  networks: Option<HashMap<String, NetworkConfig>>,
+}
 
-// #[derive(Deserialize)]
-// struct NetworkConfig {
-//   name: String,
-//   rpc_url: String,
-// }
+#[derive(Deserialize)]
+struct NetworkConfig {
+  name: String,
+  rpc_url: String,
+}
 
 struct Network {
   chain_id: u64,
@@ -41,25 +42,32 @@ struct Network {
   rpc_url: String,
 }
 
-fn collect_rpc_urls() -> HashMap<u64, Network> {
+fn read_config() -> Result<Config, Box<dyn Error>> {
+  let home_dir = dirs::home_dir().ok_or("Could not find home directory")?;
+
+  let config_path = home_dir.join(".config").join("walletfetch").join("config.toml");
+
+  if !config_path.exists(){
+    return Err(format!("Config file not found at {}", config_path.display()).into());
+  }
+
+  let config_content = std::fs::read_to_string(config_path)?;
+  let config: Config = toml::from_str(&config_content)?;
+
+  Ok(config)
+}
+
+fn collect_rpc_urls(config: &Config) -> HashMap<u64, Network> {
   let mut networks = HashMap::new();
 
-  for (key, value) in env::vars() {
-    if key.starts_with("RPC_URL_"){
-      if let Some(chain_id_str) = key.strip_prefix("RPC_URL_"){
-        if let Ok(chain_id) = chain_id_str.parse::<u64>(){
-          let name = match chain_id {
-            1 => "Ethereum Mainnet",
-            8453 => "Base",
-            _ => "Uknown Network"
-          };
-
-          networks.insert(chain_id, Network{
-            chain_id: chain_id,
-            name: name.to_string(),
-            rpc_url: value,
-          });
-        };
+  if let Some(network_configs) = &config.networks {
+    for (chain_id_str, network_config) in network_configs {
+      if let Ok(chain_id) = chain_id_str.parse::<u64>(){
+        networks.insert(chain_id, Network{
+          chain_id,
+          name: network_config.name.clone(),
+          rpc_url: network_config.rpc_url.clone(),
+        });
       }
     }
   }
@@ -156,20 +164,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .get_matches();
 
+    let config = read_config()?;
+
     let address = match matches.get_one::<String>("address"){
       Some(addr) if !addr.is_empty() => addr.to_string(),
-      _ => {
-        match env::var("WALLET_FETCH_ADDRESS") {
-          Ok(addr) if !addr.is_empty() => addr,
-          _ => {
-            eprintln!("Error: No Ethereum address provided. Either pass it as an argument or set the WALLET_FETCH_ADDRESS environment variable");
-            return Err("No Ethereum address provided".into());
-          }
+      _ => match &config.address {
+        Some(addr) if !addr.is_empty() => addr.clone(),
+        _ => {
+          eprintln!("Error: No address provided. Either passs it as an argument or set it in the config file");
+          return Err("No address provided".into());
         }
-      }
+      },
     };
 
-    let networks = collect_rpc_urls();
+    let networks = collect_rpc_urls(&config);
 
     if networks.is_empty(){
       eprintln!("RPC URLs are not defined");
