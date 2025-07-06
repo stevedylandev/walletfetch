@@ -1,0 +1,13 @@
+address = "0x464d18C13b4420E07eE85d5E6Fddfc3078eE9e23"
+
+[networks.1]
+name = "Mainnet"
+rpc_url = "https://eth.drpc.org"
+
+[networks.8453]
+name = "Base"
+rpc_url = "https://base.drpc.org"
+
+[networks.42161]
+name = "Arbitrum"
+rpc_url = "https://arbitrum.drpc.org"
