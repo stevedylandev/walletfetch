@@ -14,3 +14,6 @@ toml = "0.8"
 dirs = "5.0"
 indicatif = "0.17"
 colored = "2.0"
+tiny-keccak = { version = "2.0.2", features = ["keccak"]}
+unicode-normalization = "0.1.24"
+hex = "0.4.3"

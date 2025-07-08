@@ -9,6 +9,9 @@ use toml;
 use dirs;
 use indicatif::{ProgressBar, ProgressStyle};
 use colored::*;
+use tiny_keccak::{Hasher, Keccak};
+use unicode_normalization::UnicodeNormalization;
+use hex;
 
 #[derive(Serialize)]
 struct JsonRpcRequest {
@@ -68,6 +71,41 @@ struct TokenBalance {
 enum BalanceResult {
   Native(f64, String),
   Token(TokenBalance),
+}
+
+fn keccak256(data: &[u8]) -> [u8; 32] {
+  let mut hasher = Keccak::v256();
+  let mut output = [0u8; 32];
+  hasher.update(data);
+  hasher.finalize(&mut output);
+  output
+}
+
+fn normalize_name(name: &str) -> String {
+  name.nfkc().collect::<String>().to_lowercase()
+}
+
+fn namehash(name: &str) -> [u8; 32] {
+  let normalized = normalize_name(name);
+
+  let mut node = [0u8; 32];
+
+  if normalized.is_empty(){
+    return node;
+  }
+
+  let labels: Vec<&str> = normalized.split('.').collect();
+
+  for label in labels.iter().rev() {
+    let label_hash = keccak256(label.as_bytes());
+
+    let mut combined = [0u8; 64];
+    combined[0..32].copy_from_slice(&node);
+    combined[32..64].copy_from_slice(&label_hash);
+
+    node = keccak256(&combined);
+  }
+  node
 }
 
 fn read_config() -> Result<Config, Box<dyn Error>> {
@@ -288,6 +326,134 @@ async fn fetch_all_balances(
   Ok(balances)
 }
 
+async fn get_resolver_address(
+  client: &Client,
+  rpc_url: &str,
+  namehash: [u8; 32]
+) -> Result<String, Box<dyn Error>>{
+  let registry_address = "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e";
+
+  let namehash_hex = format!("0x{}", hex::encode(namehash));
+
+  let data = format!("0x0178b8bf{}", &namehash_hex[2..]);
+
+  let request_data = serde_json::json!({
+    "jsonrpc": "2.0",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": registry_address,
+        "data": data
+      },
+      "latest"
+    ],
+    "id": 1
+  });
+
+  let response = client.post(rpc_url)
+    .json(&request_data)
+    .send()
+    .await?;
+
+  let status = response.status();
+
+  if !status.is_success(){
+    let error_text = response.text().await?;
+    return Err(format!("HTTP error {}: {}", status, error_text).into());
+  }
+
+  let response_text = response.text().await?;
+  let response_body: JsonRpcResponse = serde_json::from_str(&response_text)?;
+
+  if response_body.result == "0x0000000000000000000000000000000000000000" {
+    return Err("No resolver found for this name".into());
+  }
+
+  let address = format!("0x{}", &response_body.result[26..]);
+
+  Ok(address)
+}
+
+async fn resolve_ens_address(
+  client: &Client,
+  rpc_url: &str,
+  resolver_address: &str,
+  namehash: [u8; 32]
+) -> Result<String, Box<dyn Error>>{
+
+  let namehash_hex = format!("0x{}", hex::encode(namehash));
+
+  println!("Namehash hex: {}", namehash_hex);
+
+  let data = format!("0x3b3b57de{}", &namehash_hex[2..]);
+
+  let request_data = serde_json::json!({
+    "jsonrpc": "2.0",
+    "method": "eth_call",
+    "params": [
+      {
+        "to": resolver_address,
+        "data": data
+      },
+      "latest"
+    ],
+    "id": 1
+  });
+
+  let response = client.post(rpc_url)
+    .json(&request_data)
+    .send()
+    .await?;
+
+  let status = response.status();
+
+  if !status.is_success(){
+    let error_text = response.text().await?;
+    return Err(format!("HTTP error {}: {}", status, error_text).into());
+  }
+
+  let response_text = response.text().await?;
+  let response_body: JsonRpcResponse = serde_json::from_str(&response_text)?;
+
+  if response_body.result == "0x0000000000000000000000000000000000000000" {
+    return Err("No address found for this name".into());
+  }
+
+  let address = format!("0x{}", &response_body.result[26..]);
+
+  Ok(address)
+}
+
+async fn resolve_address_or_ens(
+  client: &Client,
+  input: &str,
+  networks: &HashMap<u64, Network>
+) -> Result<String, Box<dyn Error>> {
+  if input.to_lowercase().ends_with(".eth"){
+    let mainnet = networks.get(&1);
+
+    if let Some(network) = mainnet {
+      let namehash = namehash(input);
+
+      let resolver_address = get_resolver_address(client, &network.rpc_url, namehash).await?;
+
+      println!("Resolver address: {}", resolver_address);
+
+      let eth_address = resolve_ens_address(client, &network.rpc_url, &resolver_address, namehash).await?;
+
+      return Ok(eth_address);
+    } else {
+      return Err("Ethereum mainnet configuration not found for ENS resolution".into());
+    }
+  } else {
+    if !input.starts_with("0x") || input.len() != 42 {
+      return Err("Invalid Ethereum address format".into());
+    }
+
+    Ok(input.to_string())
+  }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let matches = Command::new("wallet-fetch")
@@ -304,7 +470,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let config = read_config()?;
 
-    let address = match matches.get_one::<String>("address"){
+    let input = match matches.get_one::<String>("address"){
       Some(addr) if !addr.is_empty() => addr.to_string(),
       _ => match &config.address {
         Some(addr) if !addr.is_empty() => addr.clone(),
@@ -320,6 +486,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if networks.is_empty(){
       eprintln!("RPC URLs are not defined");
     }
+
+    let client = Client::new();
+
+    let address = resolve_address_or_ens(&client, &input, &networks).await?;
 
     let balances = fetch_all_balances(&address, networks).await?;
 
