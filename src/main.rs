@@ -7,6 +7,8 @@ use futures::future::join_all;
 use tokio::task::JoinHandle;
 use toml;
 use dirs;
+use indicatif::{ProgressBar, ProgressStyle};
+use colored::*;
 
 #[derive(Serialize)]
 struct JsonRpcRequest {
@@ -18,8 +20,6 @@ struct JsonRpcRequest {
 
 #[derive(Deserialize)]
 struct JsonRpcResponse {
-  // id: u32,
-  // jsoonrpc: String,
   result: String,
 }
 
@@ -66,7 +66,7 @@ struct TokenBalance {
 }
 
 enum BalanceResult {
-  Native(f64, String), // Just balance and network_name
+  Native(f64, String),
   Token(TokenBalance),
 }
 
@@ -205,6 +205,24 @@ async fn fetch_token_balance(
   Err(format!("Failed to parse balance for token {} on network {}", token.symbol, network.name).into())
 }
 
+fn get_eth_logo() -> &'static str {
+r#"    --------------4%--------------
+    -------------44HH-------------
+    ------------444HHH------------
+    -----------4444HHHH-----------
+    ---------~44444HHHHH~---------
+    --------4444444HHHHHHW--------
+    -------4444HHHHWWWWHHHH-------
+    ------KHHHHHHHHWWWWWWWWW------
+    ---------HHHHHHWWWWWW---------
+    -------44---HHHWWW---HH-------
+    --------~444?----4HHH~--------
+    ----------44444HHHHH----------
+    -----------L444HHHq-----------
+    -------------44HH-------------
+    --------------4H--------------"#
+}
+
 async fn fetch_all_balances(
   address: &str,
   networks: HashMap<u64, Network>
@@ -212,6 +230,15 @@ async fn fetch_all_balances(
   let client = Client::new();
 
   let mut tasks: Vec<JoinHandle<Result<BalanceResult, Box<dyn Error + Send + Sync>>>> = Vec::new();
+
+  let spinner = ProgressBar::new_spinner();
+  spinner.set_style(
+      ProgressStyle::default_spinner()
+          .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+          .template("{spinner:.green} {msg}")
+          .unwrap()
+  );
+  spinner.set_message("Fetching balances...");
 
   for (_, network) in &networks {
     let client_clone = client.clone();
@@ -241,6 +268,8 @@ async fn fetch_all_balances(
   }
 
   let results = join_all(tasks).await;
+
+  spinner.finish_and_clear();
 
   let mut balances = Vec::new();
   for result in results {
@@ -297,9 +326,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if balances.is_empty(){
       println!("No balances found for address {}", address);
     } else {
-      println!("Balances for {}", address);
-      println!("------------------------");
-
       let mut network_balances: HashMap<String, Vec<String>> = HashMap::new();
 
       for balance in balances {
@@ -315,13 +341,37 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
       }
 
+      let logo = get_eth_logo();
+      let logo_lines: Vec<&str> = logo.lines().collect();
+      let logo_height = logo_lines.len();
+
+      println!();
+      let address_display = format!("{}", address.bright_green());
+      println!("{}", format!("Wallet: {}", address_display).bright_cyan());
+      println!("{}", "=".repeat(50).bright_blue());
+
+      let mut info_lines = Vec::new();
+
       for (network, balances) in network_balances {
-        println!("Network: {}", network);
-        for balance in balances {
-          println!(" {}", balance);
+        if !info_lines.is_empty() {
+          info_lines.push("".to_string());
         }
-        println!();
+        info_lines.push(format!("{}: ", network.bright_yellow()));
+        for balance in balances {
+          info_lines.push(format!("  {} {}", "•".bright_green(), balance.bright_white()));
+        }
       }
+
+      let display_lines = std::cmp::max(logo_height, info_lines.len());
+
+      for i in 0..display_lines {
+        let logo_line = if i < logo_height { logo_lines[i] } else { "" };
+        let info_line = if i < info_lines.len() { &info_lines[i] } else { "" };
+
+        println!("{}    {}", logo_line.bright_cyan(), info_line);
+      }
+
+      println!();
     }
 
     Ok(())
