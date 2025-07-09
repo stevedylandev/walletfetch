@@ -16,12 +16,12 @@ jobs:
     steps:
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
+          name: Release ${{ github.ref }}
           draft: false
           prerelease: false
 
@@ -47,82 +47,67 @@ jobs:
             asset_name: walletfetch-windows-x86_64.exe
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          target: ${{ matrix.target }}
-          override: true
+          targets: ${{ matrix.target }}
 
       - name: Install musl-tools (Linux musl only)
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Create archive (Unix)
         if: matrix.os != 'windows-latest'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../${{ matrix.asset_name }}.tar.gz your-app-binary-name
+          tar czf ../../../${{ matrix.asset_name }}.tar.gz walletfetch
 
       - name: Create archive (Windows)
         if: matrix.os == 'windows-latest'
         run: |
           cd target/${{ matrix.target }}/release
-          7z a ../../../${{ matrix.asset_name }}.zip your-app-binary-name.exe
+          7z a ../../../${{ matrix.asset_name }}.zip walletfetch.exe
 
       - name: Upload Release Asset (Unix)
         if: matrix.os != 'windows-latest'
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./${{ matrix.asset_name }}.tar.gz
-          asset_name: ${{ matrix.asset_name }}.tar.gz
-          asset_content_type: application/gzip
+          tag_name: ${{ github.ref }}
+          files: ./${{ matrix.asset_name }}.tar.gz
 
       - name: Upload Release Asset (Windows)
         if: matrix.os == 'windows-latest'
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./${{ matrix.asset_name }}.zip
-          asset_name: ${{ matrix.asset_name }}.zip
-          asset_content_type: application/zip
+          tag_name: ${{ github.ref }}
+          files: ./${{ matrix.asset_name }}.zip
 
   publish-crates:
     needs: build-and-upload
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Publish to crates.io
-        uses: actions-rs/cargo@v1
-        with:
-          command: publish
-          args: --token ${{ secrets.CRATES_TOKEN }}
+        run: cargo publish --token ${{ secrets.CRATES_TOKEN }}
 
   update-homebrew:
     needs: build-and-upload
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Get release info
         id: get_release
@@ -145,7 +130,7 @@ jobs:
 
           # Update the formula
           cat > Formula/walletfetch.rb << EOF
-          class YourApp < Formula
+          class Walletfetch < Formula
             desc "Like Neofetch, but for your wallet"
             homepage "https://github.com/stevedylandev/walletfetch"
             url "https://github.com/${{ github.repository }}/releases/download/${{ steps.get_release.outputs.tag_name }}/walletfetch-macos-x86_64.tar.gz"
@@ -173,7 +158,7 @@ jobs:
     needs: build-and-upload
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Generate install script
         run: |
@@ -189,14 +174,14 @@ jobs:
           case $OS in
               linux)
                   case $ARCH in
-                      x86_64) BINARY="your-app-linux-x86_64" ;;
+                      x86_64) BINARY="walletfetch-linux-x86_64" ;;
                       *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
                   esac
                   ;;
               darwin)
                   case $ARCH in
-                      x86_64) BINARY="your-app-macos-x86_64" ;;
-                      arm64) BINARY="your-app-macos-aarch64" ;;
+                      x86_64) BINARY="walletfetch-macos-x86_64" ;;
+                      arm64) BINARY="walletfetch-macos-aarch64" ;;
                       *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
                   esac
                   ;;
@@ -223,18 +208,16 @@ jobs:
           mv /tmp/walletfetch "$INSTALL_DIR/"
           chmod +x "$INSTALL_DIR/walletfetch"
 
-          echo "your-app installed to $INSTALL_DIR/walletfetch"
+          echo "walletfetch installed to $INSTALL_DIR/walletfetch"
           echo "Make sure $INSTALL_DIR is in your PATH"
           EOF
 
           chmod +x scripts/install.sh
 
       - name: Upload install script
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./scripts/install.sh
-          asset_name: install.sh
-          asset_content_type: text/plain
+          tag_name: ${{ github.ref }}
+          files: ./scripts/install.sh
