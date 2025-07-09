@@ -18,18 +18,18 @@ For the time being you can install `walletfetch` by building from source, which 
 cargo --version
 ```
 
-2. Clone the repo and `cd` into it
+2. Run the install command
 
 ```bash
-git clone https://github.com/stevedylandev/walletfetch
-cd walletfetch
+cargo install walletfetch
 ```
 
-3. Install locally
+Make sure it worked by running
 
 ```bash
-cargo install --path .
+walletfetch --version
 ```
+
 
 ## Usage
 
