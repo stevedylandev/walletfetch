@@ -149,6 +149,22 @@ fn collect_rpc_urls(config: &Config) -> HashMap<u64, Network> {
   networks
 }
 
+fn format_balance_smart(balance: f64, symbol: &str) -> String {
+    let formatted = if balance >= 1_000_000.0 {
+        format!("{:.2}M", balance / 1_000_000.0)
+    } else if balance >= 1_000.0 {
+        format!("{:.2}K", balance / 1_000.0)
+    } else if balance >= 1.0 {
+        format!("{:.2}", balance)
+    } else if balance > 0.0 {
+        format!("{:.6}", balance).trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        "0".to_string()
+    };
+
+    format!("{} {}", formatted, symbol)
+}
+
 async fn fetch_balance(
   client: &Client,
   address: &str,
@@ -240,21 +256,23 @@ async fn fetch_token_balance(
 }
 
 fn get_eth_logo() -> &'static str {
-r#"    --------------4%--------------
-    -------------44HH-------------
-    ------------444HHH------------
-    -----------4444HHHH-----------
-    ---------~44444HHHHH~---------
-    --------4444444HHHHHHW--------
-    -------4444HHHHWWWWHHHH-------
-    ------KHHHHHHHHWWWWWWWWW------
-    ---------HHHHHHWWWWWW---------
-    -------44---HHHWWW---HH-------
-    --------~444?----4HHH~--------
-    ----------44444HHHHH----------
-    -----------L444HHHq-----------
-    -------------44HH-------------
-    --------------4H--------------"#
+r#"------------------------------
+--------------4%--------------
+-------------44HH-------------
+------------444HHH------------
+-----------4444HHHH-----------
+---------~44444HHHHH~---------
+--------4444444HHHHHHW--------
+-------4444HHHHWWWWHHHH-------
+------KHHHHHHHHWWWWWWWWW------
+---------HHHHHHWWWWWW---------
+-------44---HHHWWW---HH-------
+--------~444?----4HHH~--------
+----------44444HHHHH----------
+-----------L444HHHq-----------
+-------------44HH-------------
+--------------4H--------------
+------------------------------"#
 }
 
 async fn fetch_all_balances(
@@ -401,11 +419,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
       for balance in balances {
         match balance {
           BalanceResult::Native(eth_balance, network_name) => {
-            let balance_str = format!("{:.4} ETH", eth_balance);
+            let balance_str = format_balance_smart(eth_balance, "ETH");
             network_balances.entry(network_name).or_default().push(balance_str);
           },
           BalanceResult::Token(token_balance) => {
-            let balance_str = format!("{:.4} {}", token_balance.balance, token_balance.symbol);
+            let balance_str = format_balance_smart(token_balance.balance, &token_balance.symbol);
             network_balances.entry(token_balance.network_name).or_default().push(balance_str);
           }
         }
