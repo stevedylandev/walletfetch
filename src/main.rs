@@ -283,16 +283,6 @@ async fn fetch_all_balances(
 
   let mut tasks: Vec<JoinHandle<Result<BalanceResult, Box<dyn Error + Send + Sync>>>> = Vec::new();
 
-  let spinner = ProgressBar::new_spinner();
-  spinner.set_style(
-      ProgressStyle::default_spinner()
-          .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
-          .template("{spinner:.green} {msg}")
-          .unwrap()
-  );
-  spinner.set_message("Fetching balances...");
-  spinner.enable_steady_tick(std::time::Duration::from_millis(100));
-
   for (_, network) in &networks {
     let client_clone = client.clone();
     let address_clone = address.to_string();
@@ -321,8 +311,6 @@ async fn fetch_all_balances(
   }
 
   let results = join_all(tasks).await;
-
-  spinner.finish_and_clear();
 
   let mut balances = Vec::new();
   for result in results {
@@ -389,6 +377,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .get_matches();
 
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+            .template("{spinner:.green} {msg}")
+            .unwrap()
+    );
+    spinner.set_message("Fetching balances...");
+    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
+
     let config = read_config()?;
 
     let input = match matches.get_one::<String>("address"){
@@ -410,7 +408,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let address = resolve_address_or_ens(&input, &networks).await?;
 
+
     let balances = fetch_all_balances(&address, networks).await?;
+
+    spinner.finish_and_clear();
 
     if balances.is_empty(){
       println!("No balances found for address {}", address);
