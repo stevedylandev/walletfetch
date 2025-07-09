@@ -291,6 +291,7 @@ async fn fetch_all_balances(
           .unwrap()
   );
   spinner.set_message("Fetching balances...");
+  spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
   for (_, network) in &networks {
     let client_clone = client.clone();
