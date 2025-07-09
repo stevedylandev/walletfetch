@@ -2,7 +2,7 @@
 name = "walletfetch"
 description = "Like Neofetch, but for your wallet"
 homepage = "https://github.com/stevedylandev/walletfetch"
-repository = "stevedylandev/walletfetch"
+repository = "https://github.com/stevedylandev/walletfetch"
 readme = "README.md"
 version = "0.0.1"
 edition = "2024"
