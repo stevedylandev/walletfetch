@@ -1,7 +1,12 @@
 [package]
 name = "walletfetch"
+description = "Like Neofetch, but for your wallet"
+homepage = "https://github.com/stevedylandev/walletfetch"
+repository = "stevedylandev/walletfetch"
+readme = "README.md"
 version = "0.0.1"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 clap = { version = "4.4", features = ["derive"] }
