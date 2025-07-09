@@ -382,6 +382,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
       let logo = get_eth_logo();
       let logo_lines: Vec<&str> = logo.lines().collect();
       let logo_height = logo_lines.len();
+      let logo_width = logo_lines.iter().map(|line| line.len()).max().unwrap_or(0);
+
 
       println!();
       let address_display = format!("{}", address.bright_green());
@@ -403,7 +405,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
       let display_lines = std::cmp::max(logo_height, info_lines.len());
 
       for i in 0..display_lines {
-        let logo_line = if i < logo_height { logo_lines[i] } else { "" };
+        let logo_line = if i < logo_height {
+          logo_lines[i]
+        } else {
+          &" ".repeat(logo_width)
+        };
         let info_line = if i < info_lines.len() { &info_lines[i] } else { "" };
 
         println!("{}    {}", logo_line.bright_cyan(), info_line);
