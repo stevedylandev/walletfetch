@@ -1,0 +1,240 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+  build-and-upload:
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset_name: walletfetch-linux-x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            asset_name: walletfetch-linux-x86_64-musl
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            asset_name: walletfetch-macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset_name: walletfetch-macos-aarch64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset_name: walletfetch-windows-x86_64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Install musl-tools (Linux musl only)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --target ${{ matrix.target }}
+
+      - name: Create archive (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../${{ matrix.asset_name }}.tar.gz your-app-binary-name
+
+      - name: Create archive (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a ../../../${{ matrix.asset_name }}.zip your-app-binary-name.exe
+
+      - name: Upload Release Asset (Unix)
+        if: matrix.os != 'windows-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./${{ matrix.asset_name }}.tar.gz
+          asset_name: ${{ matrix.asset_name }}.tar.gz
+          asset_content_type: application/gzip
+
+      - name: Upload Release Asset (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./${{ matrix.asset_name }}.zip
+          asset_name: ${{ matrix.asset_name }}.zip
+          asset_content_type: application/zip
+
+  publish-crates:
+    needs: build-and-upload
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Publish to crates.io
+        uses: actions-rs/cargo@v1
+        with:
+          command: publish
+          args: --token ${{ secrets.CRATES_TOKEN }}
+
+  update-homebrew:
+    needs: build-and-upload
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Get release info
+        id: get_release
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "version=${TAG_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Update Homebrew formula
+        run: |
+          # Download the macOS x86_64 binary to calculate SHA256
+          curl -L -o macos-binary.tar.gz \
+            "https://github.com/${{ github.repository }}/releases/download/${{ steps.get_release.outputs.tag_name }}/walletfetch-macos-x86_64.tar.gz"
+
+          SHA256=$(shasum -a 256 macos-binary.tar.gz | cut -d' ' -f1)
+
+          # Clone your homebrew tap repository
+          git clone https://github.com/stevedylandev/homebrew-walletfetch.git
+          cd homebrew-walletfetch
+
+          # Update the formula
+          cat > Formula/walletfetch.rb << EOF
+          class YourApp < Formula
+            desc "Like Neofetch, but for your wallet"
+            homepage "https://github.com/stevedylandev/walletfetch"
+            url "https://github.com/${{ github.repository }}/releases/download/${{ steps.get_release.outputs.tag_name }}/walletfetch-macos-x86_64.tar.gz"
+            sha256 "$SHA256"
+            version "${{ steps.get_release.outputs.version }}"
+
+            def install
+              bin.install "walletfetch"
+            end
+
+            test do
+              system "#{bin}/walletfetch", "--version"
+            end
+          end
+          EOF
+
+          # Commit and push changes
+          git config user.name "Steve Simkins"
+          git config user.email "stevedsimkins@gmail.com"
+          git add Formula/walletfetch.rb
+          git commit -m "Update walletfetch to ${{ steps.get_release.outputs.version }}"
+          git push https://x-access-token:${{ secrets.HOMEBREW_TAP_TOKEN }}@github.com/stevedylandev/homebrew-walletfetch.git
+
+  create-install-script:
+    needs: build-and-upload
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Generate install script
+        run: |
+          mkdir -p scripts
+          cat > scripts/install.sh << 'EOF'
+          #!/bin/bash
+          set -e
+
+          # Detect OS and architecture
+          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+          ARCH=$(uname -m)
+
+          case $OS in
+              linux)
+                  case $ARCH in
+                      x86_64) BINARY="your-app-linux-x86_64" ;;
+                      *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+                  esac
+                  ;;
+              darwin)
+                  case $ARCH in
+                      x86_64) BINARY="your-app-macos-x86_64" ;;
+                      arm64) BINARY="your-app-macos-aarch64" ;;
+                      *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+                  esac
+                  ;;
+              *)
+                  echo "Unsupported OS: $OS"
+                  exit 1
+                  ;;
+          esac
+
+          # Get latest release
+          LATEST_RELEASE=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+
+          # Download and install
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${LATEST_RELEASE}/${BINARY}.tar.gz"
+          INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+
+          echo "Downloading $BINARY from $DOWNLOAD_URL..."
+          curl -L "$DOWNLOAD_URL" | tar -xz -C /tmp
+
+          # Create install directory if it doesn't exist
+          mkdir -p "$INSTALL_DIR"
+
+          # Move binary to install directory
+          mv /tmp/walletfetch "$INSTALL_DIR/"
+          chmod +x "$INSTALL_DIR/walletfetch"
+
+          echo "your-app installed to $INSTALL_DIR/walletfetch"
+          echo "Make sure $INSTALL_DIR is in your PATH"
+          EOF
+
+          chmod +x scripts/install.sh
+
+      - name: Upload install script
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./scripts/install.sh
+          asset_name: install.sh
+          asset_content_type: text/plain

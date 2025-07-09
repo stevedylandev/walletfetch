@@ -1,0 +1,27 @@
+[project]
+name = "walletfetch"
+binary_name = "walletfetch"
+description = "Like Neofetch, but for your wallet"
+homepage = "https://github.com/stevedylandev/walletfetch"
+repository = "stevedylandev/walletfetch"
+license = "MIT"
+
+[homebrew]
+tap_repo = "stevedylandev/homebrew-walletfetch"
+formula_name = "walletfetch"
+
+[targets]
+# Linux targets
+"x86_64-unknown-linux-gnu" = { asset_name = "walletfetch-linux-x86_64" }
+"x86_64-unknown-linux-musl" = { asset_name = "walletfetch-linux-x86_64-musl" }
+
+# macOS targets
+"x86_64-apple-darwin" = { asset_name = "walletfetch-macos-x86_64" }
+"aarch64-apple-darwin" = { asset_name = "walletfetch-macos-aarch64" }
+
+# Windows targets
+"x86_64-pc-windows-msvc" = { asset_name = "walletfetch-windows-x86_64.exe" }
+
+[install_script]
+install_dir = "$HOME/.local/bin"
+script_name = "install.sh"
