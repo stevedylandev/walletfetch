@@ -74,11 +74,43 @@ enum BalanceResult {
 
 fn read_config() -> Result<Config, Box<dyn Error>> {
   let home_dir = dirs::home_dir().ok_or("Could not find home directory")?;
-
-  let config_path = home_dir.join(".config").join("walletfetch").join("config.toml");
+  let config_dir = home_dir.join(".config").join("walletfetch");
+  let config_path = config_dir.join("config.toml");
 
   if !config_path.exists(){
-    return Err(format!("Config file not found at {}", config_path.display()).into());
+
+    std::fs::create_dir_all(&config_dir)?;
+
+    let default_config = r#"# WalletFetch Configuration
+# You can set a default address here (optional)
+# address = "0x..."
+
+[networks.1]
+name = "Mainnet"
+rpc_url = "https://eth.drpc.org"
+
+[networks.1.tokens]
+USDC = { address = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals = 6 }
+
+[networks.42161]
+name = "Arbitrum"
+rpc_url = "https://arbitrum.drpc.org"
+
+[networks.42161.tokens]
+USDC = { address = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals = 6 }
+
+[networks.8453]
+name = "Base"
+rpc_url = "https://base.drpc.org"
+
+[networks.8453.tokens]
+USDC = { address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals = 6 }
+"#;
+
+    std::fs::write(&config_path, default_config)?;
+
+    println!("Created default config at: {}", config_path.display());
+    println!("You can edit this file to customize your networks and tokens.");
   }
 
   let config_content = std::fs::read_to_string(config_path)?;
