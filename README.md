@@ -6,7 +6,7 @@ Like neofetch but for your wallet
 
 ## About
 
-I used this small project as a way to get more experience with Rust, so if things look weird, that's why lol. Overall it was a lot of fun, and I enjoyed using AI as a learning resource only and writing the code myself (check out (agents.md)[/agents.md]).
+I used this small project as a way to get more experience with Rust, so if things look weird, that's why lol. Overall it was a lot of fun, and I enjoyed using AI as a learning resource only and writing the code myself (check out [agents.md](/agents.md)).
 
 ## Installation
 
