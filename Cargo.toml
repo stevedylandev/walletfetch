@@ -17,3 +17,7 @@ colored = "2.0"
 tiny-keccak = { version = "2.0.2", features = ["keccak"]}
 unicode-normalization = "0.1.24"
 hex = "0.4.3"
+
+# Alloy dependencies
+alloy = { version = "0.1", features = ["provider-http"] }
+alloy-ccip-read = "0.1.0"

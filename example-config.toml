@@ -13,3 +13,10 @@ rpc_url = "https://arbitrum.drpc.org"
 
 [networks.42161.tokens]
 USDC = { address = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals = 6 }
+
+[networks.8453]
+name = "Base"
+rpc_url = "https://base.drpc.org"
+
+[networks.8453.tokens]
+USDC = { address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals = 6 }
