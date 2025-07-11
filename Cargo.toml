@@ -26,3 +26,8 @@ hex = "0.4.3"
 # Alloy dependencies
 alloy = { version = "0.1", features = ["provider-http"] }
 alloy-ccip-read = "0.1.0"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
