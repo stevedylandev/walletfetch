@@ -438,6 +438,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 
       println!();
+      if !input.starts_with("0x"){
+        let ens_display = format!("{}", input.bright_green());
+        println!("{}", format!("ENS: {}", ens_display).bright_cyan());
+      }
       let address_display = format!("{}", address.bright_green());
       println!("{}", format!("Wallet: {}", address_display).bright_cyan());
       println!("{}", "=".repeat(50).bright_blue());
