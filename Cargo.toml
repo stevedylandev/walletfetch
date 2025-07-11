@@ -8,8 +8,6 @@ version = "0.0.11"
 edition = "2024"
 license = "MIT"
 
-[workspace.metadata.dist]
-allow-dirty = ["ci"]
 
 [dependencies]
 clap = { version = "4.4", features = ["derive"] }
