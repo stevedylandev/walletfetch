@@ -4,7 +4,7 @@ description = "Like Neofetch, but for your wallet"
 homepage = "https://github.com/stevedylandev/walletfetch"
 repository = "https://github.com/stevedylandev/walletfetch"
 readme = "README.md"
-version = "0.0.11"
+version = "0.0.12"
 edition = "2024"
 license = "MIT"
 
