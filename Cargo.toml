@@ -31,6 +31,3 @@ alloy-ccip-read = "0.1.0"
 [profile.dist]
 inherits = "release"
 lto = "thin"
-
-[workspace.metadata.dist]
-allow-dirty = true
