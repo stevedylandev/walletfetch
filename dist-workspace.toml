@@ -1,9 +1,6 @@
 [workspace]
 members = ["cargo:."]
 
-[workspace.metadata.dist]
-allow-dirty = ["ci"]
-
 # Config for 'dist'
 [dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
@@ -22,3 +19,11 @@ install-path = "CARGO_HOME"
 publish-jobs = ["homebrew"]
 # Whether to install an updater program
 install-updater = false
+
+# Custom runner configurations
+[dist.github-custom-runners]
+# Use Ubuntu 24.04 for Linux builds
+x86_64-unknown-linux-gnu = "ubuntu-24.04"
+aarch64-unknown-linux-gnu = "ubuntu-24.04"
+# Use Windows 2022 for Windows builds (this is already the default, but explicitly specified here)
+x86_64-pc-windows-msvc = "windows-2022"
