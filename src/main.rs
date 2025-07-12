@@ -333,7 +333,7 @@ async fn resolve_address_or_ens(
   input: &str,
   networks: &HashMap<u64, Network>
 ) -> Result<String, Box<dyn Error>> {
-  if input.to_lowercase().ends_with(".eth") {
+  if input.to_lowercase().ends_with(".eth") || input.to_lowercase().ends_with(".box") {
     let mainnet = networks.get(&1);
 
     let rpc_url = match mainnet {
@@ -342,11 +342,12 @@ async fn resolve_address_or_ens(
     };
 
     let provider = ProviderBuilder::new()
-      .on_http(rpc_url.parse().unwrap());
+      .connect_http(rpc_url.parse().unwrap());
 
-    let reader = CCIPReader::new(provider.boxed());
+    let reader = CCIPReader::new(provider);
+    let registry_address = None;
 
-    let resolution_result = match reader.resolve_name(input).await {
+    let resolution_result = match alloy_ccip_read::ens::resolve_name(&reader, registry_address, input).await {
       Ok(result) => result,
       Err(e) => return Err(format!("Failed to resolve address for {}: {}", input, e).into())
     };
@@ -438,7 +439,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 
       println!();
-      if !input.starts_with("0x"){
+      if input.ends_with(".eth") || input.ends_with(".box"){
         let ens_display = format!("{}", input.bright_green());
         println!("{}", format!("ENS: {}", ens_display).bright_cyan());
       }

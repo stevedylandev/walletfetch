@@ -25,8 +25,8 @@ unicode-normalization = "0.1.24"
 hex = "0.4.3"
 
 # Alloy dependencies
-alloy = { version = "0.1", features = ["provider-http"] }
-alloy-ccip-read = "0.1.0"
+alloy = { version = "1.0.18", features = ["provider-http"] }
+alloy-ccip-read = { git = "https://github.com/stevedylandev/alloy-ccip-read", rev = "1350862"}
 
 # The profile that 'dist' will build with
 [profile.dist]
