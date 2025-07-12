@@ -2,29 +2,24 @@ use clap::{Arg, Command};
 use reqwest::Client;
 use std::collections::HashMap;
 use std::error::Error;
-use serde::{Deserialize,Serialize};
+use serde::{Deserialize};
 use futures::future::join_all;
 use tokio::task::JoinHandle;
 use toml;
 use dirs;
 use indicatif::{ProgressBar, ProgressStyle};
 use colored::*;
-use alloy::providers::{ProviderBuilder};
+use alloy::providers::{Provider, ProviderBuilder};
+use alloy::primitives::Address;
 use alloy_ccip_read::CCIPReader;
+use alloy::sol;
 
-#[derive(Serialize)]
-struct JsonRpcRequest {
-  jsonrpc: String,
-  method: String,
-  params: Vec<String>,
-  id: u32,
+sol! {
+    #[sol(rpc)]
+    contract IERC20 {
+        function balanceOf(address account) external view returns (uint256);
+    }
 }
-
-#[derive(Deserialize)]
-struct JsonRpcResponse {
-  result: String,
-}
-
 
 #[derive(Deserialize)]
 struct Config {
@@ -166,93 +161,46 @@ fn format_balance_smart(balance: f64, symbol: &str) -> String {
 }
 
 async fn fetch_balance(
-  client: &Client,
+  _client: &Client,
   address: &str,
   network: &Network
-) -> Result<(u64, f64, String), Box<dyn Error + Send + Sync >> {
-  let request_data = JsonRpcRequest {
-    jsonrpc: "2.0".to_string(),
-    method: "eth_getBalance".to_string(),
-    params: vec![address.to_string(), "latest".to_string()],
-    id: 1,
-  };
+) -> Result<(u64, f64, String), Box<dyn Error + Send + Sync>> {
+  let provider = ProviderBuilder::new()
+      .connect_http(network.rpc_url.parse()?);
 
-  let response = client.post(&network.rpc_url)
-    .json(&request_data)
-    .send()
-    .await?;
+  let alloy_address = address.parse::<Address>()?;
 
-  let status = response.status();
+  let balance = provider.get_balance(alloy_address).await?;
 
-  if !response.status().is_success() {
-    let error_text = response.text().await?;
-    return Err(format!("HTTP error {}: {}", status, error_text).into());
-  }
+  let eth_balance = (balance.to_string().parse::<f64>().unwrap_or(0.0)) / 1_000_000_000_000_000_000.0;
 
-  let response_text = response.text().await?;
-  let response_body: JsonRpcResponse = serde_json::from_str(&response_text)?;
-
-  if let Some(hex_str) = response_body.result.strip_prefix("0x"){
-    if let Ok(balance) = u128::from_str_radix(hex_str, 16){
-      let eth_balance = balance as f64 / 1_000_000_000_000_000_000.0;
-      return Ok((network.chain_id, eth_balance, network.name.clone()));
-    }
-  }
-  Err(format!("Failed to parse balance for network {}", network.name).into())
+  Ok((network.chain_id, eth_balance, network.name.clone()))
 }
 
 async fn fetch_token_balance(
-  client: &Client,
+  _client: &Client,
   address: &str,
   token: &TokenInfo,
   network: &Network,
 ) -> Result<TokenBalance, Box<dyn Error + Send + Sync>> {
-  let clean_address = address.strip_prefix("0x").unwrap_or(address).to_lowercase();
-  let data = format!("0x70a08231000000000000000000000000{}", clean_address);
+  let provider = ProviderBuilder::new()
+      .connect_http(network.rpc_url.parse()?);
 
-  let request_data = serde_json::json!({
-    "jsonrpc": "2.0",
-    "method": "eth_call",
-    "params": [
-      {
-        "to": token.address,
-        "data": data
-      },
-      "latest"
-    ],
-    "id": 1
-  });
+  let wallet_address = address.parse::<Address>()?;
+  let token_address = token.address.parse::<Address>()?;
 
-  let response = client.post(&network.rpc_url)
-    .json(&request_data)
-    .send()
-    .await?;
+  let contract = IERC20::new(token_address, provider);
 
-  let status = response.status();
+  let balance = contract.balanceOf(wallet_address).call().await?;
 
-  if !status.is_success(){
-    let error_text = response.text().await?;
-    return Err(format!("HTTP error {}: {}", status, error_text).into());
-  }
+  let divisor = 10_u128.pow(token.decimals as u32) as f64;
+  let balance = (balance.to_string().parse::<f64>().unwrap_or(0.0)) / divisor;
 
-  let response_text = response.text().await?;
-
-  let response_body: JsonRpcResponse = serde_json::from_str(&response_text)?;
-
-  if let Some(hex_str) = response_body.result.strip_prefix("0x") {
-    if let Ok(raw_balance) = u128::from_str_radix(hex_str, 16){
-      let divisor = 10_u128.pow(token.decimals as u32) as f64;
-      let balance = raw_balance as f64 / divisor;
-
-      return Ok(TokenBalance {
-        network_name: network.name.clone(),
-        symbol: token.symbol.clone(),
-        balance,
-      });
-    }
-  }
-
-  Err(format!("Failed to parse balance for token {} on network {}", token.symbol, network.name).into())
+  Ok(TokenBalance {
+      network_name: network.name.clone(),
+      symbol: token.symbol.clone(),
+      balance,
+  })
 }
 
 fn get_eth_logo() -> &'static str {
