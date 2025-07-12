@@ -10,15 +10,11 @@ I used this small project as a way to get more experience with Rust, so if thing
 
 ## Installation
 
-For the time being you can install `walletfetch` by building from source, which is actually pretty easy. Just follow the steps below:
-
-1. Make sure you have [Rust installed](https://www.rust-lang.org/tools/install)
+Visit the [releases page](https://github.com/stevedylandev/walletfetch/releases) for various install methods, or you can use [Homebrew](https://brew.sh) or [Cargo](https://www.rust-lang.org/tools/install)
 
 ```bash
-cargo --version
+brew install stevedylandev/walletfetch/walletfetch
 ```
-
-2. Run the install command
 
 ```bash
 cargo install walletfetch
