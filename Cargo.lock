@@ -4022,7 +4022,7 @@ dependencies = [
 
 [[package]]
 name = "walletfetch"
-version = "0.0.13"
+version = "0.0.14"
 dependencies = [
  "alloy",
  "alloy-ccip-read",
