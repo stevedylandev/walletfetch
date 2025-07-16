@@ -438,7 +438,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 
       println!();
-      if !input.starts_with("0x"){
+      if input.ends_with(".eth") || input.ends_with(".box"){
         let ens_display = format!("{}", input.bright_green());
         println!("{}", format!("ENS: {}", ens_display).bright_cyan());
       }
