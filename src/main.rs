@@ -333,7 +333,7 @@ async fn resolve_address_or_ens(
   input: &str,
   networks: &HashMap<u64, Network>
 ) -> Result<String, Box<dyn Error>> {
-  if input.to_lowercase().ends_with(".eth") {
+  if input.contains(".") {
     let mainnet = networks.get(&1);
 
     let rpc_url = match mainnet {
@@ -438,7 +438,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 
       println!();
-      if input.ends_with(".eth") || input.ends_with(".box"){
+      if input.contains("."){
         let ens_display = format!("{}", input.bright_green());
         println!("{}", format!("ENS: {}", ens_display).bright_cyan());
       }
